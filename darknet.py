@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 
+# parse the cfg file to blocks
 def parse_cfg(cfg):
 
     blocks = []
@@ -26,14 +27,14 @@ def parse_cfg(cfg):
 
     return blocks
 
-
+# Add short cut from previou layer output
 class ShortcutLayer(nn.Module):
     def __init__(self, idx):
         super(ShortcutLayer, self).__init__()
         self.idx = idx
 
-    def forward(self, outputs):
-        return outputs[self.idx]
+    def forward(self, x, outputs):
+        return x + outputs[self.idx]
 
 class RouteLayer(nn.Module):
     def __init__(self, indices):
@@ -45,6 +46,7 @@ class RouteLayer(nn.Module):
         out = torch.cat(out, dim=1)
         return out
 
+# Transform conv output to bounding boxes of [center_x, center_y, width, height, objectness score, class scores...]
 class DetectionLayer(nn.Module):
     def __init__(self, anchors, num_classes, input_dim):
         super(DetectionLayer, self).__init__()
@@ -61,7 +63,7 @@ class DetectionLayer(nn.Module):
         detection = x.view(batch_size, self.num_anchors, self.num_classes + 5, grid_size, grid_size)
         # box centers
         detection[:, :, :2, :, :] = torch.sigmoid(detection[:, :, :2, :, :])
-        #objectness score and class scores
+        # objectness score and class scores
         detection[:, :, 4:, :, :] = torch.sigmoid(detection[:, :, 4:, :, :])
 
         # add offset to box centers
@@ -78,24 +80,25 @@ class DetectionLayer(nn.Module):
         y_offset = y_offset.expand_as(detection[:, :, 1, :, :])
         detection[:, :, 0, :, :] += x_offset
         detection[:, :, 1, :, :] += y_offset
+        # rescale to original image dimention
         detection[:, :, :2, :, :] *= stride
+
         # box width and height
         anchors = self.anchors.unsqueeze(-1).unsqueeze(-1).expand_as(detection[:, :, 2:4, :, :])
         if cuda:
             anchors = anchors.cuda()
 
         detection[:, :, 2:4, :, :] = torch.exp(detection[:, :, 2:4, :, :]) * anchors
-
         detection = detection.transpose(1, 2).contiguous().view(batch_size, self.num_classes+5, -1).transpose(1, 2)
 
         return detection
 
 def create_modules(blocks):
-    net_info = blocks[0]
+    net_info = blocks[0]    # the first block is network info
     module_list = nn.ModuleList()
     in_channel = 3
     out_channel = in_channel
-    out_channels = []
+    out_channels = []   # keep track of output channel for every block for specifying conv layer input channels
 
     for i, block in enumerate(blocks[1:]):
         block_type = block['type']
@@ -136,6 +139,7 @@ def create_modules(blocks):
             stride = int(block['stride'])
             module = nn.Upsample(scale_factor=stride, mode='bilinear')
 
+        # route block could have one or two indices. Negative value means relative index.
         elif block_type == 'route':
             layer_indices = block['layers'].split(',')
             first_idx = int(layer_indices[0])
@@ -185,7 +189,7 @@ class Darknet(nn.Module):
             if block_type == 'convolutional' or block_type == 'upsample':
                 x = module(x)
             elif block_type == 'shortcut':
-                x += module(outputs)
+                x = module(x, outputs)
             elif block_type == 'route':
                 x = module(outputs)
             elif block_type == 'yolo':
@@ -196,6 +200,13 @@ class Darknet(nn.Module):
 
         return detections
 
+    '''
+    Weights file structure:
+    - header: 5 integers
+    - weights of conv layers 
+        - conv layer with batch_norm: [bn_bias, bn_weight, bn_running_meanm, bn_running_var, conv_weight]
+        - conv layer without batch_norm: [conv_bias, conv_weight]
+    '''
     def load_weights(self, file):
         with open(file, 'rb') as f:
             header = np.fromfile(f, np.int32, count=5)

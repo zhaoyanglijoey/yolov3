@@ -21,13 +21,13 @@ def load_classes(namesfile):
 def parse_args():
     parser = argparse.ArgumentParser(description='YOLOv3 object detection')
     parser.add_argument('-i', '--input', required=True, help='input image or directory or video')
-    parser.add_argument('-t', '--obj-thresh', type=float, default=0.5, help='objectness threshold')
-    parser.add_argument('-n', '--nms-thresh', type=float, default=0.4, help='non max suppression threshold')
-    parser.add_argument('-o', '--outdir', default='detection', help='output directory')
-    parser.add_argument('-v', '--video', action='store_true', default=False, help='detecting a video input')
-    parser.add_argument('-w', '--webcam', action='store_true',  default=False, help='detecting from webcam #int(input)')
-    parser.add_argument('--cuda', action='store_true', default=False, help='run on gpu')
-
+    parser.add_argument('-t', '--obj-thresh', type=float, default=0.5, help='objectness threshold, DEFAULT: 0.5')
+    parser.add_argument('-n', '--nms-thresh', type=float, default=0.4, help='non max suppression threshold, DEFAULT: 0.4')
+    parser.add_argument('-o', '--outdir', default='detection', help='output directory, DEFAULT: detection/')
+    parser.add_argument('-v', '--video', action='store_true', default=False, help='flag for detecting a video input')
+    parser.add_argument('-w', '--webcam', action='store_true',  default=False, help='flag for detecting from webcam. Specify webcam ID in the input. usually 0 for a single webcam connected')
+    parser.add_argument('--cuda', action='store_true', default=False, help='flag for running on GPU')
+    parser.add_argument('--no-show', action='store_true', default=False, help='do not show the detected video in real time')
 
     args = parser.parse_args()
 
@@ -92,10 +92,12 @@ def detect_video(model, args):
                 for detection in detections:
                     draw_bbox([frame], detection, colors, classes)
 
-            cv2.imshow('frame', frame)
+            if not args.no_show:
+                cv2.imshow('frame', frame)
             out.write(frame)
-            print(read_frames)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            if read_frames % 30 == 0:
+                print('Number of frames processed:', read_frames)
+            if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         else:
             break
@@ -105,7 +107,8 @@ def detect_video(model, args):
     print('Total frames:', read_frames)
     cap.release()
     out.release()
-    cv2.destroyAllWindows()
+    if not args.no_show:
+        cv2.destroyAllWindows()
 
     print('Detected video saved to ' + output_path)
 
