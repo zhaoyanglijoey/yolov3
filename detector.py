@@ -11,6 +11,7 @@ import random
 import os.path as osp
 import os
 import sys
+from datetime import datetime
 
 def load_classes(namesfile):
     fp = open(namesfile, "r")
@@ -68,10 +69,11 @@ def detect_video(model, args):
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     read_frames = 0
 
+    start_time = datetime.now()
     print('Detecting...')
     while cap.isOpened():
         retflag, frame = cap.read()
@@ -81,7 +83,7 @@ def detect_video(model, args):
             frame_tensor = Variable(frame_tensor)
 
             if args.cuda:
-                frame_tensor.cuda()
+                frame_tensor = frame_tensor.cuda()
 
             detections = model(frame_tensor, args.cuda).cpu()
             detections = process_result(detections, args.obj_thresh, args.nms_thresh)
@@ -98,7 +100,8 @@ def detect_video(model, args):
         else:
             break
 
-    print('Detection finished')
+    end_time = datetime.now()
+    print('Detection finished in %s' % (end_time - start_time))
     print('Total frames:', read_frames)
     cap.release()
     out.release()
@@ -127,13 +130,14 @@ def detect_image(model, args):
     if not osp.exists(args.outdir):
         os.makedirs(args.outdir)
 
+    start_time = datetime.now()
     print('Detecting...')
     for batchi, img_batch in enumerate(img_batches):
         img_tensors = [cv_image2tensor(img, input_size) for img in img_batch]
         img_tensors = torch.stack(img_tensors)
         img_tensors = Variable(img_tensors)
         if args.cuda:
-            img_tensors.cuda()
+            img_tensors = img_tensors.cuda()
         detections = model(img_tensors, args.cuda).cpu()
         detections = process_result(detections, args.obj_thresh, args.nms_thresh)
         if len(detections) == 0:
@@ -147,7 +151,8 @@ def detect_image(model, args):
             save_path = osp.join(args.outdir, 'det_' + osp.basename(imlist[batchi*batch_size + i]))
             cv2.imwrite(save_path, img)
 
-    print('Detection finished')
+    end_time = datetime.now()
+    print('Detection finished in %s' % (end_time - start_time))
 
     return
 

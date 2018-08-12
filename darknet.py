@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import numpy as np
-
+from torch.autograd import Variable
 
 def parse_cfg(cfg):
 
@@ -177,8 +177,9 @@ class Darknet(nn.Module):
         blocks = self.blocks[1:]
         outputs = []
         detections = torch.tensor([], dtype=torch.float)
+        detections = Variable(detections)
         if cuda:
-            detections = detections.cuda
+            detections = detections.cuda()
         for i, module in enumerate(self.module_list):
             block_type = blocks[i]['type']
             if block_type == 'convolutional' or block_type == 'upsample':
