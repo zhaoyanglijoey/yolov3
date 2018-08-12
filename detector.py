@@ -83,7 +83,7 @@ def detect_video(model, args):
             if args.cuda:
                 frame_tensor.cuda()
 
-            detections = model(frame_tensor).cpu()
+            detections = model(frame_tensor, args.cuda).cpu()
             detections = process_result(detections, args.obj_thresh, args.nms_thresh)
             if len(detections) != 0:
                 detections = transform_result(detections, [frame], input_size)
@@ -134,7 +134,7 @@ def detect_image(model, args):
         img_tensors = Variable(img_tensors)
         if args.cuda:
             img_tensors.cuda()
-        detections = model(img_tensors).cpu()
+        detections = model(img_tensors, args.cuda).cpu()
         detections = process_result(detections, args.obj_thresh, args.nms_thresh)
         if len(detections) == 0:
             continue

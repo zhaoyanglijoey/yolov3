@@ -53,7 +53,7 @@ class DetectionLayer(nn.Module):
         self.num_anchors = len(anchors)
         self.input_dim = input_dim
 
-    def forward(self, x):
+    def forward(self, x, cuda):
         batch_size = x.size(0)
         grid_size = x.size(2)
         stride = self.input_dim // grid_size
@@ -70,6 +70,10 @@ class DetectionLayer(nn.Module):
         x_offset = torch.from_numpy(x_offset).float()
         y_offset = torch.from_numpy(y_offset).float()
 
+        if cuda:
+            x_offset = x_offset.cuda()
+            y_offset = y_offset.cuda()
+
         x_offset = x_offset.expand_as(detection[:, :, 0, :, :])
         y_offset = y_offset.expand_as(detection[:, :, 1, :, :])
         detection[:, :, 0, :, :] += x_offset
@@ -77,9 +81,13 @@ class DetectionLayer(nn.Module):
         detection[:, :, :2, :, :] *= stride
         # box width and height
         anchors = self.anchors.unsqueeze(-1).unsqueeze(-1).expand_as(detection[:, :, 2:4, :, :])
+        if cuda:
+            anchors = anchors.cuda()
+
         detection[:, :, 2:4, :, :] = torch.exp(detection[:, :, 2:4, :, :]) * anchors
 
         detection = detection.transpose(1, 2).contiguous().view(batch_size, self.num_classes+5, -1).transpose(1, 2)
+
         return detection
 
 def create_modules(blocks):
@@ -90,9 +98,9 @@ def create_modules(blocks):
     out_channels = []
 
     for i, block in enumerate(blocks[1:]):
-        module = nn.Sequential()
         block_type = block['type']
         if block_type == 'convolutional':
+            module = nn.Sequential()
             if 'batch_normalize' in block.keys():
                 bn = True
                 bias = False
@@ -122,13 +130,11 @@ def create_modules(blocks):
 
         elif block_type == 'shortcut':
             idx = int(block['from']) + i
-            shortcut_layer = ShortcutLayer(idx)
-            module.add_module('shortcut_%d' % i, shortcut_layer)
+            module = ShortcutLayer(idx)
 
         elif block_type == 'upsample':
             stride = int(block['stride'])
-            upsample_layer = nn.Upsample(scale_factor=stride, mode='bilinear')
-            module.add_module('upsample_%d' % i, upsample_layer)
+            module = nn.Upsample(scale_factor=stride, mode='bilinear')
 
         elif block_type == 'route':
             layer_indices = block['layers'].split(',')
@@ -140,12 +146,10 @@ def create_modules(blocks):
                 if second_idx < 0:
                     second_idx += i
                 out_channel = out_channels[first_idx] + out_channels[second_idx]
-                route_layer = RouteLayer([first_idx, second_idx])
+                module = RouteLayer([first_idx, second_idx])
             else:
                 out_channel = out_channels[first_idx]
-                route_layer = RouteLayer([first_idx])
-
-            module.add_module('route_%d' % i, route_layer)
+                module = RouteLayer([first_idx])
 
 
         elif block_type == 'yolo':
@@ -155,9 +159,7 @@ def create_modules(blocks):
             anchors = [[int(anchors[2*i]), int(anchors[2*i+1])] for i in masks]
             num_classes = int(block['classes'])
             input_dim = int(net_info['width'])
-            detection_layer = DetectionLayer(anchors, num_classes, input_dim)
-
-            module.add_module('detection_%d' % i, detection_layer)
+            module = DetectionLayer(anchors, num_classes, input_dim)
 
         out_channels.append(out_channel)
         in_channel = out_channel
@@ -171,10 +173,12 @@ class Darknet(nn.Module):
         self.blocks = parse_cfg(cfg)
         self.net_info, self.module_list = create_modules(self.blocks)
 
-    def forward(self, x):
+    def forward(self, x, cuda):
         blocks = self.blocks[1:]
         outputs = []
-        detection = torch.tensor([], dtype=torch.float)
+        detections = torch.tensor([], dtype=torch.float)
+        if cuda:
+            detections = detections.cuda
         for i, module in enumerate(self.module_list):
             block_type = blocks[i]['type']
             if block_type == 'convolutional' or block_type == 'upsample':
@@ -184,12 +188,12 @@ class Darknet(nn.Module):
             elif block_type == 'route':
                 x = module(outputs)
             elif block_type == 'yolo':
-                x = module(x)
-                detection = torch.cat((x, detection), dim=1)
+                x = module(x, cuda)
+                detections = torch.cat((x, detections), dim=1)
 
             outputs.append(x)
 
-        return detection
+        return detections
 
     def load_weights(self, file):
         with open(file, 'rb') as f:
