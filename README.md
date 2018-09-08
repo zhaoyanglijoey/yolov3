@@ -74,4 +74,4 @@ But the saved video will be in normal speed for detecting on a video because it 
 ## Reference
 - Paper [YOLOv3: An Incremental Improvement](https://pjreddie.com/media/files/papers/YOLOv3.pdf)
 - Paper [Website](https://pjreddie.com/darknet/yolo/)
-- [Tutorial]((https://blog.paperspace.com/how-to-implement-a-yolo-object-detector-in-pytorch/))
+- [Tutorial](https://blog.paperspace.com/how-to-implement-a-yolo-object-detector-in-pytorch/)
